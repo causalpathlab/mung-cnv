@@ -1,0 +1,51 @@
+[package]
+name = "mung-cnv"
+version = "0.2.1"
+edition = "2021"
+rust-version = "1.91"
+license = "MIT"
+authors = ["Yongjin Park <ypp@stat.ubc.ca> <yongjin.park@ubc.ca>"]
+description = "Malignancy Unmixing on Normalized Genomes with CNV estimation — inferCNV-style profiles and clone strata"
+repository = "https://github.com/causalpathlab/mung-cnv"
+homepage = "https://github.com/causalpathlab/mung-cnv"
+readme = "README.md"
+keywords = ["genomics", "cnv", "single-cell", "infercnv", "clone"]
+categories = ["science", "command-line-utilities"]
+
+[lib]
+name = "cnv"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mung"
+path = "src/main.rs"
+
+[features]
+default = []
+cuda = [
+    "legume-numeric/cuda",
+    "data-beans/cuda",
+]
+metal = [
+    "legume-numeric/metal",
+    "data-beans/metal",
+]
+hdf5 = ["data-beans/hdf5"]
+
+[dependencies]
+data-beans = { version = "0.6.9", features = ["aux"] }
+legume-genomic-types = "0.4.0"
+legume-numeric = { version = "0.8.10", features = ["matrix", "param", "candle", "mcmc"] }
+
+anyhow = "1.0"
+clap = { version = "4.5.20", features = ["derive"] }
+log = "0.4"
+nalgebra = "0.34"
+nalgebra-sparse = "0.11"
+rayon = "1.10.0"
+rustc-hash = "2.1"
+rand = "0.10.1"
+rand_distr = "0.6"
+
+[dev-dependencies]
+approx = "0.5.1"
