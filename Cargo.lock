@@ -2295,9 +2295,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "legume-genomic-types"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79c4f232b527c26be74665ac2508f96f17f50b0aa4bd5901cd47f95b3bb6959b"
+checksum = "10b0b2bb572239d169ad016c359680d10c2f24009b87a964fcb4c6ec87eabf91"
 dependencies = [
  "anyhow",
  "dashmap",
@@ -2645,7 +2645,7 @@ checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
 name = "mung-cnv"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "approx",
