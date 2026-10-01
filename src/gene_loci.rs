@@ -1,8 +1,11 @@
-//! Resolve data-beans row (gene) names to genomic loci from a GFF/GTF.
+//! Resolve data-beans row names to genomic loci.
 //!
-//! Row names in a `data-beans` backend come in a few shapes:
-//! `ENSG00000243485_MIR1302-2HG`, a bare symbol `MIR1302-2HG`, a bare
-//! Ensembl id, or any of these with a `/modality/...` suffix (faba).
+//! A row axis made only of genomic intervals (`chr:start-end`, 0-based
+//! half-open, as `faba depth` names its bins) places each row by its own
+//! coordinates ([`interval_loci`]). Any other row is a
+//! gene, looked up in a GFF/GTF. Gene row names come in a few shapes:
+//! `{ensg}_{symbol}`, a bare symbol, a bare Ensembl id, or any of these with
+//! a `/modality/...` suffix (faba).
 //!
 //! Matching goes through the workspace's one canonical gene matcher,
 //! [`data_beans::utilities::name_matching::GeneIndex`], built over the GFF
@@ -15,6 +18,7 @@
 //! `gene` features stretched over all their records).
 
 use data_beans::utilities::name_matching::GeneIndex;
+use genomic_data::coordinates::{parse_interval, PeakCoord};
 use genomic_data::gff::{GeneId, GeneSymbol, GffRecordMap};
 use rayon::prelude::*;
 
@@ -39,10 +43,64 @@ impl GeneLocus {
         format!("{}:{}-{}", self.chromosome, self.start - 1, self.stop).into()
     }
 
-    /// `{gene_id}_{symbol}`, faba's gene key.
+    /// `{gene_id}_{symbol}`, faba's gene key; an interval row's own name.
     pub fn gene_key(&self) -> Box<str> {
+        if self.symbol.is_empty() {
+            return self.gene_id.clone();
+        }
         format!("{}_{}", self.gene_id, self.symbol).into()
     }
+
+    /// The locus of interval `r` (0-based half-open), named `name` and
+    /// placed at its midpoint.
+    fn from_coord(name: &str, r: PeakCoord) -> Self {
+        Self {
+            tss: r.start + 1 + (r.end - r.start - 1) / 2,
+            start: r.start + 1,
+            stop: r.end,
+            gene_id: name.into(),
+            symbol: "".into(),
+            chromosome: r.chr,
+        }
+    }
+}
+
+/// Drop a faba `/modality/...` suffix and surrounding blanks.
+fn strip_modality(row_name: &str) -> &str {
+    row_name.split('/').next().unwrap_or(row_name).trim()
+}
+
+/// Each row's locus when every row is named as a genomic interval
+/// (`chr:start-end` or `chr_start_end`, 0-based half-open, with an optional
+/// faba `/modality/...` suffix); `None` when any row is not, and the axis is
+/// genes. A row keeps its own name and its chromosome as written.
+pub fn interval_loci(row_names: &[Box<str>]) -> Option<Vec<GeneLocus>> {
+    row_names
+        .iter()
+        .map(|n| {
+            let name = strip_modality(n);
+            Some(GeneLocus::from_coord(name, parse_interval(name)?))
+        })
+        .collect()
+}
+
+/// An error naming two distinct bins that overlap: the files were binned on
+/// different grids, and their rows cannot be aligned one to one.
+pub fn check_one_grid(loci: &[GeneLocus]) -> anyhow::Result<()> {
+    let mut by_pos: Vec<&GeneLocus> = loci.iter().collect();
+    by_pos.sort_by(|a, b| (&a.chromosome, a.start, a.stop).cmp(&(&b.chromosome, b.start, b.stop)));
+    by_pos.dedup_by(|a, b| a.chromosome == b.chromosome && a.start == b.start && a.stop == b.stop);
+    for w in by_pos.windows(2) {
+        if w[0].chromosome == w[1].chromosome && w[1].start <= w[0].stop {
+            anyhow::bail!(
+                "bins {} and {} overlap: the inputs were binned on different grids; \
+                 bin every file with the same resolution",
+                w[0].gene_id,
+                w[1].gene_id
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Lookup from GFF through the canonical [`GeneIndex`] matcher: a row name
@@ -58,7 +116,7 @@ pub struct GeneLocusIndex {
 /// leading segment (`ENSG00000000003.15_TSPAN6` → `ENSG00000000003_TSPAN6`),
 /// so the version never blocks a match.
 fn normalize_query(row_name: &str) -> String {
-    let core = row_name.split('/').next().unwrap_or(row_name).trim();
+    let core = strip_modality(row_name);
     let (head, rest) = match core.split_once('_') {
         Some((h, r)) => (h, Some(r)),
         None => (core, None),
@@ -203,6 +261,59 @@ mod tests {
             "GENE1"
         );
         assert!(idx.resolve("NOPE").is_none());
+    }
+
+    fn names(xs: &[&str]) -> Vec<Box<str>> {
+        xs.iter().map(|&x| x.into()).collect()
+    }
+
+    #[test]
+    fn an_all_interval_axis_places_rows_by_name() {
+        let loci =
+            interval_loci(&names(&["chr2:1000-2000/depth", "chrUn_KI1:0-10", "2_5_9"])).unwrap();
+        let l = &loci[0];
+        assert_eq!(
+            (l.chromosome.as_ref(), l.start, l.stop, l.tss),
+            ("chr2", 1001, 2000, 1500)
+        );
+        assert_eq!(l.interval_name().as_ref(), "chr2:1000-2000");
+        assert_eq!(l.gene_key().as_ref(), "chr2:1000-2000");
+        assert_eq!(loci[1].chromosome.as_ref(), "chrUn_KI1");
+        assert_eq!((loci[2].chromosome.as_ref(), loci[2].start), ("2", 6));
+    }
+
+    #[test]
+    fn one_gene_row_makes_a_gene_axis() {
+        for other in [
+            "GENE1",
+            "ENSG1_GENE1",
+            "GENE-1",
+            "chr2:2000-1000",
+            "chr2:15",
+        ] {
+            assert!(
+                interval_loci(&names(&["chr1:0-10", other])).is_none(),
+                "{other}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_midpoint_does_not_overflow() {
+        let l = &interval_loci(&names(&["chr1:0-9223372036854775807"])).unwrap()[0];
+        assert!(l.tss > 0);
+    }
+
+    #[test]
+    fn bins_on_different_grids_are_refused() {
+        let same = interval_loci(&names(&["chr1:0-10", "chr1:10-20", "chr1:0-10"])).unwrap();
+        assert!(check_one_grid(&same).is_ok());
+        let shifted = interval_loci(&names(&["chr1:0-10", "chr1:5-15"])).unwrap();
+        let err = check_one_grid(&shifted).unwrap_err().to_string();
+        assert!(
+            err.contains("chr1:0-10") && err.contains("chr1:5-15"),
+            "{err}"
+        );
     }
 
     #[test]

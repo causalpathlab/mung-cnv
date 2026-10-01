@@ -8,8 +8,9 @@ use cnv::cell_profile::{run_cell_profiles, CellProfileConfig};
 use cnv::clone_bayes::{cells_table_beside, DEFAULT_MIN_PURITY};
 use cnv::clone_call::{call_clones_with_burden, write_clone_table, CloneCallConfig, CloneEngine};
 use cnv::gene_annotation::{self, Config};
-use cnv::gene_loci::GeneLocusIndex;
+use cnv::gene_loci::{check_one_grid, interval_loci, GeneLocusIndex};
 use data_beans::aux::data_loading::{read_data_on_shared_rows, ReadSharedRowsArgs};
+use data_beans::aux::feature_names::FeatureNameKind;
 use data_beans::convert::try_open_or_convert;
 use data_beans::sparse_io_vector::SparseIoVec;
 use log::{info, warn};
@@ -174,9 +175,11 @@ struct InferOpts {
         help = "Gene annotation file (GFF/GTF)",
         long_help = "Path to gene annotation file in GFF/GTF format, with `gene`\n\
                      features carrying gene_id and gene_name. Places each gene on\n\
-                     the genome. Optional: without it, the `--species` entry of\n\
-                     the annotation config is used, downloaded once into the cache\n\
-                     (`mung data where`). Ignored by `clones --from`."
+                     the genome. Not needed for rows named as genomic intervals\n\
+                     (`chr:start-end`, e.g. `faba depth` bins). Optional: without\n\
+                     it, the `--species` entry of the annotation config is used,\n\
+                     downloaded once into the cache (`mung data where`). Ignored\n\
+                     by `clones --from`."
     )]
     gff: Option<Box<str>>,
 
@@ -335,14 +338,20 @@ struct CloneArgs {
     seed: u64,
 }
 
+/// How rows are placed on the genome.
+enum RowAxis {
+    /// Gene rows, looked up in the annotation.
+    Genes(GeneLocusIndex),
+    /// Genomic-interval rows, placed by their own names.
+    Intervals,
+}
+
 fn run_infercnv(
     query: &[Box<str>],
     out: &str,
     bin_size: i64,
     args: &InferOpts,
 ) -> anyhow::Result<()> {
-    // The annotation first, so a missing one fails before any data is read.
-    let gff = gene_annotation::resolve(args.gff.as_deref(), args.species.as_deref())?;
     let has_ref = !args.r#ref.is_empty();
     if !has_ref {
         warn!("no --ref given: using the query cohort mean as baseline; shared CNVs will be invisible");
@@ -352,12 +361,47 @@ fn run_infercnv(
     let mut files: Vec<Box<str>> = args.r#ref.clone();
     files.extend(query.iter().cloned());
 
+    // The row axis decides how rows are placed, so it is read first: genes
+    // need the annotation (found now, before any data is loaded), while a
+    // matrix whose every row is a genomic interval (faba depth) is placed by
+    // its own names and aligned across files by exact name.
+    let mut raw_rows: Vec<Box<str>> = Vec::new();
+    for f in &files {
+        raw_rows.extend(try_open_or_convert(f)?.row_names()?);
+    }
+    let axis = match interval_loci(&raw_rows) {
+        Some(bins) => {
+            check_one_grid(&bins)?;
+            if args.gff.is_some() || args.species.is_some() {
+                warn!("rows are genomic intervals: --gff / --species are not used");
+            }
+            let mut widths: Vec<i64> = bins.iter().map(|b| b.stop - b.start + 1).collect();
+            widths.sort_unstable();
+            let width = widths.get(widths.len() / 2).copied().unwrap_or(0);
+            info!(
+                "rows are genomic intervals of about {width} bp: --window {} smooths over about {} bp",
+                args.window,
+                width.saturating_mul(args.window as i64)
+            );
+            RowAxis::Intervals
+        }
+        None => {
+            let gff = gene_annotation::resolve(args.gff.as_deref(), args.species.as_deref())?;
+            RowAxis::Genes(
+                GeneLocusIndex::from_gff(&gff).with_context(|| format!("reading {gff}"))?,
+            )
+        }
+    };
+
     let loaded = read_data_on_shared_rows(ReadSharedRowsArgs {
         data_files: files,
         preload: args.preload,
         // The reference/query split below is positional per file, and every
         // query cell gets a profile.
         keep_empty_barcodes: true,
+        // Bins keep their names as written (data-beans' locus canonical form
+        // would rename them and merge overlapping ones).
+        feature_kind: matches!(axis, RowAxis::Intervals).then_some(FeatureNameKind::Exact),
         ..Default::default()
     })?;
     let data = loaded.data;
@@ -378,9 +422,14 @@ fn run_infercnv(
     );
 
     let row_names = data.row_names()?;
-    let loci = GeneLocusIndex::from_gff(&gff)
-        .with_context(|| format!("reading {gff}"))?
-        .resolve_all(&row_names);
+    let loci: Vec<Option<_>> = match &axis {
+        RowAxis::Genes(index) => index.resolve_all(&row_names),
+        RowAxis::Intervals => interval_loci(&row_names)
+            .context("aligned rows are no longer genomic intervals")?
+            .into_iter()
+            .map(Some)
+            .collect(),
+    };
 
     let cfg = CellProfileConfig {
         window: args.window,
