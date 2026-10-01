@@ -1,6 +1,6 @@
 [package]
 name = "mung-cnv"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 rust-version = "1.91"
 license = "MIT"
@@ -24,16 +24,14 @@ path = "src/main.rs"
 default = []
 cuda = [
     "legume-numeric/cuda",
-    "data-beans/cuda",
 ]
 metal = [
     "legume-numeric/metal",
-    "data-beans/metal",
 ]
 hdf5 = ["data-beans/hdf5"]
 
 [dependencies]
-data-beans = { version = "0.6.20", default-features = false, features = ["aux"] }
+data-beans = { version = "0.6.21", default-features = false, features = ["aux"] }
 legume-genomic-types = "0.4.5"
 legume-numeric = { version = "0.8.14", default-features = false, features = ["matrix", "param"] }
 
