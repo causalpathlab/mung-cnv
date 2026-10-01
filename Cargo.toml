@@ -33,9 +33,9 @@ metal = [
 hdf5 = ["data-beans/hdf5"]
 
 [dependencies]
-data-beans = { version = "0.6.9", features = ["aux"] }
-legume-genomic-types = "0.4.1"
-legume-numeric = { version = "0.8.12", features = ["matrix", "param", "candle", "mcmc"] }
+data-beans = { version = "0.6.19", default-features = false, features = ["aux"] }
+legume-genomic-types = "0.4.4"
+legume-numeric = { version = "0.8.13", default-features = false, features = ["matrix", "param"] }
 
 anyhow = "1.0"
 clap = { version = "4.5.20", features = ["derive"] }
