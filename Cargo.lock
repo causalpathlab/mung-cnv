@@ -1026,9 +1026,9 @@ dependencies = [
 
 [[package]]
 name = "data-beans"
-version = "0.6.24"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "674699a07e014e2ec723e3e0d991808ff01c1ce8e2452047dfcc295b1a7cdb50"
+checksum = "79cc5248b2f07c8b3928a79710e1cc73677aa56d79dd3c64cdabae2e5505745b"
 dependencies = [
  "anyhow",
  "approx",
@@ -1335,7 +1335,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2440,9 +2440,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "legume-genomic-types"
-version = "0.4.6"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "afa0a202928d3e34a16811aa0ec94c101608f9d7c5134f2980999d58a90b7575"
+checksum = "afe9ce2e79c324436f7846cc3806b8a56614a26c21e9f4360392d3cff353f061"
 dependencies = [
  "anyhow",
  "dashmap",
@@ -3786,7 +3786,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4205,7 +4205,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4729,7 +4729,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
