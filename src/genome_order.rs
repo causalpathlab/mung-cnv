@@ -1,11 +1,13 @@
+use genomic_data::coordinates::chr_stripped;
 use rustc_hash::FxHashMap as HashMap;
 use std::io::BufRead;
 
-/// Canonical chromosome ordering: chr1..22, chrX, chrY, chrM.
-/// Returns None for unrecognized chromosomes.
+/// Canonical chromosome ordering: chr1..22, chrX, chrY, chrM, with or
+/// without a `chr` prefix in any case. The rest of the name is matched as
+/// written, as `--exclude-chr` matches it. Returns None for unrecognized
+/// chromosomes.
 fn chr_sort_key(chr: &str) -> Option<u32> {
-    let stripped = chr.strip_prefix("chr").unwrap_or(chr);
-    match stripped {
+    match chr_stripped(chr) {
         "X" => Some(23),
         "Y" => Some(24),
         "M" | "MT" => Some(25),
@@ -141,6 +143,24 @@ pub fn read_gene_positions_from_tsv(path: &str) -> anyhow::Result<Vec<GenePositi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_chr_prefix_is_matched_in_any_case() {
+        for (name, key) in [
+            ("chrX", 23),
+            ("CHRX", 23),
+            ("ChrX", 23),
+            ("X", 23),
+            ("chr1", 1),
+            ("CHR22", 22),
+            ("chrMT", 25),
+        ] {
+            assert_eq!(chr_sort_key(name), Some(key), "{name}");
+        }
+        for name in ["chrx", "chr23", "chrUn_CTG1v1", "CTG1"] {
+            assert_eq!(chr_sort_key(name), None, "{name}");
+        }
+    }
 
     #[test]
     fn test_genome_order_basic() {
