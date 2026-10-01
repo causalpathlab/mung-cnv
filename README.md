@@ -68,6 +68,8 @@ mung clones --from aml001.cnv.zarr.zip --out aml001
 ```
 
 `mung --help` and `mung <subcommand> --help` document all flags.
+`mung describe <subcommand>` prints the same flags as JSON for front ends
+such as `senna run`, which start `mung` as a separate program.
 
 ## Library
 

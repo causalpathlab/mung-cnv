@@ -98,6 +98,13 @@ enum Commands {
                       senna / pinto so collapse cannot mix across clone boundaries."
     )]
     Clones(CloneArgs),
+    /// A subcommand's flags as JSON, for front ends (`senna run`) that
+    /// build a form from them and start `mung` as a separate program.
+    #[command(hide = true)]
+    Describe {
+        /// The subcommand to describe, e.g. `clones`.
+        command: String,
+    },
 }
 
 #[derive(Args, Debug, Clone)]
@@ -190,6 +197,7 @@ struct InferCnvArgs {
 struct CloneArgs {
     #[arg(
         value_name = "QUERY",
+        required_unless_present = "from",
         help = "Query backends (expression); ignored when `--from` is set"
     )]
     query: Vec<Box<str>>,
@@ -202,7 +210,11 @@ struct CloneArgs {
     )]
     r#ref: Vec<Box<str>>,
 
-    #[arg(long, help = "GFF/GTF; required unless `--from`")]
+    #[arg(
+        long,
+        required_unless_present = "from",
+        help = "GFF/GTF; required unless `--from`"
+    )]
     gff: Option<Box<str>>,
 
     #[arg(
@@ -393,7 +405,91 @@ fn main() -> anyhow::Result<()> {
     match &cli.command {
         Commands::Infercnv(args) => run_infercnv(args),
         Commands::Clones(args) => run_clones(args),
+        Commands::Describe { command } => {
+            println!("{}", describe(command)?);
+            Ok(())
+        }
     }
+}
+
+/// Subcommand `name`'s arguments as JSON: what a front end needs to show
+/// each flag, fill it in, and lay out the command line.
+fn describe(name: &str) -> anyhow::Result<String> {
+    use clap::{ArgAction, CommandFactory};
+    let mut cli = Cli::command();
+    cli.build();
+    let cmd = cli
+        .find_subcommand(name)
+        .filter(|c| !c.is_hide_set())
+        .ok_or_else(|| anyhow::anyhow!("mung has no `{name}` command"))?;
+    let text = |s: Option<&clap::builder::StyledStr>| s.map(ToString::to_string);
+    let args: Vec<serde_json::Value> = cmd
+        .get_arguments()
+        .map(|a| {
+            let action = match a.get_action() {
+                ArgAction::SetTrue => "set_true",
+                ArgAction::SetFalse => "set_false",
+                ArgAction::Set => "set",
+                ArgAction::Append => "append",
+                ArgAction::Count => "count",
+                ArgAction::Help | ArgAction::HelpShort | ArgAction::HelpLong => "help",
+                ArgAction::Version => "version",
+                _ => "other",
+            };
+            let num_args = a.get_num_args();
+            // What a value must parse as, so a front end can check it.
+            let t = a.get_value_parser().type_id();
+            let is = |ids: &[std::any::TypeId]| ids.iter().any(|x| t == *x);
+            use std::any::TypeId as T;
+            let value_type = if is(&[T::of::<usize>(), T::of::<u64>(), T::of::<u32>()]) {
+                "unsigned"
+            } else if is(&[T::of::<i64>(), T::of::<i32>()]) {
+                "integer"
+            } else if is(&[T::of::<f64>(), T::of::<f32>()]) {
+                "number"
+            } else {
+                "text"
+            };
+            serde_json::json!({
+                "id": a.get_id().as_str(),
+                "long": a.get_long(),
+                "short": a.get_short().map(String::from),
+                "positional": a.is_positional(),
+                "help": text(a.get_help()),
+                "long_help": text(a.get_long_help()),
+                "action": action,
+                "value_type": value_type,
+                "values": a
+                    .get_possible_values()
+                    .iter()
+                    .filter(|v| !v.is_hide_set())
+                    .map(|v| v.get_name().to_string())
+                    .collect::<Vec<_>>(),
+                "default": a
+                    .get_default_values()
+                    .iter()
+                    .map(|v| v.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>(),
+                "delimiter": a.get_value_delimiter().map(String::from),
+                "num_args_min": num_args.map(|r| r.min_values()),
+                "num_args_max": num_args.and_then(|r| {
+                    (r.max_values() != usize::MAX).then_some(r.max_values())
+                }),
+                "hidden": a.is_hide_set(),
+                "required": a.is_required_set(),
+                "global": a.is_global_set(),
+            })
+        })
+        .collect();
+    Ok(serde_json::json!({
+        "describe": 1,
+        "program": "mung",
+        "version": env!("CARGO_PKG_VERSION"),
+        "command": name,
+        "about": text(cmd.get_about()),
+        "args": args,
+    })
+    .to_string())
 }
 
 fn run_clones(args: &CloneArgs) -> anyhow::Result<()> {
