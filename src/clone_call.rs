@@ -776,7 +776,7 @@ mod tests {
 
     #[test]
     fn donor_of_uses_at_suffix() {
-        assert_eq!(donor_of("AAACCTG@AML001"), "AML001");
+        assert_eq!(donor_of("AAACCTG@D1"), "D1");
         assert_eq!(donor_of("plain"), "plain");
         assert_eq!(donor_of("a@b@c"), "c");
     }
@@ -807,7 +807,7 @@ mod tests {
             data.push(-1.0 + 0.02 * (rng.random::<f32>() - 0.5));
             data.push(0.02 * (rng.random::<f32>() - 0.5));
             data.push(0.02 * (rng.random::<f32>() - 0.5));
-            names.push(format!("t{i}@AML").into_boxed_str());
+            names.push(format!("t{i}@D1").into_boxed_str());
         }
         (DMatrix::from_vec(3, n, data), names)
     }
@@ -831,16 +831,16 @@ mod tests {
             },
         );
         let n_clone = rows.iter().filter(|r| r.stratum > 0).count();
-        let aml_cloned = rows
+        let d1_cloned = rows
             .iter()
-            .filter(|r| r.donor.as_ref() == "AML" && r.stratum > 0)
+            .filter(|r| r.donor.as_ref() == "D1" && r.stratum > 0)
             .count();
         let ctl_cloned = rows
             .iter()
             .filter(|r| r.donor.as_ref() == "Ctl" && r.stratum > 0)
             .count();
         assert!(n_clone >= 50, "expected a clone, got {n_clone} cells");
-        assert!(aml_cloned >= 50, "AML cells should form the clone");
+        assert!(d1_cloned >= 50, "D1 cells should form the clone");
         assert!(
             ctl_cloned < 10,
             "Control cells should stay in bucket 0, got {ctl_cloned}"

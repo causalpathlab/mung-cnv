@@ -7,6 +7,7 @@ use clap::{Args, Parser, Subcommand};
 use cnv::cell_profile::{run_cell_profiles, CellProfileConfig};
 use cnv::clone_bayes::{cells_table_beside, DEFAULT_MIN_PURITY};
 use cnv::clone_call::{call_clones_with_burden, write_clone_table, CloneCallConfig, CloneEngine};
+use cnv::gene_annotation::{self, Config};
 use cnv::gene_loci::GeneLocusIndex;
 use data_beans::aux::data_loading::{read_data_on_shared_rows, ReadSharedRowsArgs};
 use data_beans::convert::try_open_or_convert;
@@ -63,9 +64,9 @@ enum Commands {
                       by every cell becomes invisible.\n\
                       \n\
                       Example:\n  \
-                      mung infercnv --gff gencode.v46.gtf.gz \\\n    \
+                      mung infercnv \\\n    \
                       --ref Control1.zarr.zip Control2.zarr.zip \\\n    \
-                      --out aml001.cnv AML001.zarr.zip"
+                      --out sample1.cnv sample1.zarr.zip"
     )]
     Infercnv(InferCnvArgs),
     #[command(
@@ -98,6 +99,30 @@ enum Commands {
                       senna / pinto so collapse cannot mix across clone boundaries."
     )]
     Clones(CloneArgs),
+    /// A subcommand's flags as JSON, for front ends (`senna run`) that
+    /// build a form from them and start `mung` as a separate program.
+    /// Reference data mung downloads: where it is cached, and fetching it
+    /// ahead of time for machines that will run offline.
+    #[command(subcommand)]
+    Data(DataCmd),
+    #[command(hide = true)]
+    Describe {
+        /// The subcommand to describe, e.g. `clones`.
+        command: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum DataCmd {
+    /// Print the annotation config in use, its species, and which are cached
+    Where,
+    /// Download gene annotations named in the config into the cache
+    Fetch {
+        #[arg(long, num_args = 1.., help = "Species to fetch; default: all in the config")]
+        species: Vec<Box<str>>,
+        #[arg(long, help = "Replace what the cache already holds")]
+        force: bool,
+    },
 }
 
 #[derive(Args, Debug, Clone)]
@@ -110,6 +135,32 @@ struct InferCnvArgs {
     query: Vec<Box<str>>,
 
     #[arg(
+        short,
+        long,
+        help = "Output prefix; writes {out}.zarr.zip, {out}.features.parquet, {out}.cells.parquet"
+    )]
+    out: Box<str>,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Average smoothed genes into fixed genomic tiles of this many bp (0 = one row per gene)",
+        long_help = "Average smoothed genes into fixed genomic tiles of this many bp.\n\
+                     Default 0 keeps classic inferCNV gene-level rows.\n\
+                     For large cohorts, prefer `--bin-size 1000000` (1 Mb):\n\
+                     after a 101-gene window the signal is already ~Mb-scale,\n\
+                     and autosomes compress to ~3k rows instead of ~15–20k genes."
+    )]
+    bin_size: i64,
+
+    #[command(flatten)]
+    opts: InferOpts,
+}
+
+/// The inferCNV flags `infercnv` and `clones` share.
+#[derive(Args, Debug, Clone)]
+struct InferOpts {
+    #[arg(
         long,
         num_args = 1..,
         value_name = "REF",
@@ -117,15 +168,17 @@ struct InferCnvArgs {
     )]
     r#ref: Vec<Box<str>>,
 
-    #[arg(long, help = "GFF/GTF with `gene` features (gene_id, gene_name)")]
-    gff: Box<str>,
+    #[arg(
+        long,
+        help = "GFF/GTF with `gene` features (gene_id, gene_name); default: `--species`' annotation, downloaded once"
+    )]
+    gff: Option<Box<str>>,
 
     #[arg(
-        short,
         long,
-        help = "Output prefix; writes {out}.zarr.zip, {out}.features.parquet, {out}.cells.parquet"
+        help = "Species in the annotation config (`mung data where`) whose annotation to use without `--gff`; default: the config's `default`"
     )]
-    out: Box<str>,
+    species: Option<Box<str>>,
 
     #[arg(
         long,
@@ -155,18 +208,6 @@ struct InferCnvArgs {
     )]
     min_mean_expr: f32,
 
-    #[arg(
-        long,
-        default_value_t = 0,
-        help = "Average smoothed genes into fixed genomic tiles of this many bp (0 = one row per gene)",
-        long_help = "Average smoothed genes into fixed genomic tiles of this many bp.\n\
-                     Default 0 keeps classic inferCNV gene-level rows.\n\
-                     For large cohorts, prefer `--bin-size 1000000` (1 Mb):\n\
-                     after a 101-gene window the signal is already ~Mb-scale,\n\
-                     and autosomes compress to ~3k rows instead of ~15–20k genes."
-    )]
-    bin_size: i64,
-
     #[arg(long, default_value_t = 1000, help = "Cells per streamed block")]
     block_size: usize,
 
@@ -190,20 +231,10 @@ struct InferCnvArgs {
 struct CloneArgs {
     #[arg(
         value_name = "QUERY",
+        required_unless_present = "from",
         help = "Query backends (expression); ignored when `--from` is set"
     )]
     query: Vec<Box<str>>,
-
-    #[arg(
-        long,
-        num_args = 1..,
-        value_name = "REF",
-        help = "Reference (normal) backends for inferCNV; ignored with `--from`"
-    )]
-    r#ref: Vec<Box<str>>,
-
-    #[arg(long, help = "GFF/GTF; required unless `--from`")]
-    gff: Option<Box<str>>,
 
     #[arg(
         long,
@@ -218,14 +249,6 @@ struct CloneArgs {
     )]
     out: Box<str>,
 
-    #[arg(long, default_value_t = 101)]
-    window: usize,
-    #[arg(long, default_value_t = 3.0)]
-    clip: f32,
-    #[arg(long, default_value_t = 1e4)]
-    scale: f32,
-    #[arg(long, default_value_t = 0.1)]
-    min_mean_expr: f32,
     #[arg(
         long,
         default_value_t = 0,
@@ -239,19 +262,9 @@ struct CloneArgs {
                      `>0` = one dim per tile of the interval midpoint."
     )]
     bin_size: i64,
-    #[arg(long, default_value_t = 1000)]
-    block_size: usize,
-    #[arg(long)]
-    no_center: bool,
-    #[arg(
-        long,
-        value_delimiter = ',',
-        default_value = "chrX,chrY,chrM",
-        value_name = "CHR[,CHR..]"
-    )]
-    exclude_chr: Vec<Box<str>>,
-    #[arg(long)]
-    preload: bool,
+
+    #[command(flatten)]
+    infer: InferOpts,
 
     #[arg(
         long,
@@ -309,11 +322,18 @@ struct CloneArgs {
         help = "Stratum 0 if posterior malignancy is below this (Bayes)"
     )]
     p_malig_threshold: f32,
-    #[arg(long, default_value_t = 1)]
+    #[arg(long, default_value_t = 1, help = "Random seed")]
     seed: u64,
 }
 
-fn run_infercnv(args: &InferCnvArgs) -> anyhow::Result<()> {
+fn run_infercnv(
+    query: &[Box<str>],
+    out: &str,
+    bin_size: i64,
+    args: &InferOpts,
+) -> anyhow::Result<()> {
+    // The annotation first, so a missing one fails before any data is read.
+    let gff = gene_annotation::resolve(args.gff.as_deref(), args.species.as_deref())?;
     let has_ref = !args.r#ref.is_empty();
     if !has_ref {
         warn!("no --ref given: using the query cohort mean as baseline; shared CNVs will be invisible");
@@ -321,7 +341,7 @@ fn run_infercnv(args: &InferCnvArgs) -> anyhow::Result<()> {
 
     // Reference backends first, then query, in one shared-row load.
     let mut files: Vec<Box<str>> = args.r#ref.clone();
-    files.extend(args.query.iter().cloned());
+    files.extend(query.iter().cloned());
 
     let loaded = read_data_on_shared_rows(ReadSharedRowsArgs {
         data_files: files,
@@ -349,8 +369,8 @@ fn run_infercnv(args: &InferCnvArgs) -> anyhow::Result<()> {
     );
 
     let row_names = data.row_names()?;
-    let loci = GeneLocusIndex::from_gff(&args.gff)
-        .with_context(|| format!("reading {}", args.gff))?
+    let loci = GeneLocusIndex::from_gff(&gff)
+        .with_context(|| format!("reading {gff}"))?
         .resolve_all(&row_names);
 
     let cfg = CellProfileConfig {
@@ -358,7 +378,7 @@ fn run_infercnv(args: &InferCnvArgs) -> anyhow::Result<()> {
         clip: args.clip,
         scale: args.scale,
         min_mean_expr: args.min_mean_expr,
-        bin_size: args.bin_size,
+        bin_size,
         block_size: args.block_size,
         center: !args.no_center,
         exclude_chr: args
@@ -368,7 +388,7 @@ fn run_infercnv(args: &InferCnvArgs) -> anyhow::Result<()> {
             .cloned()
             .collect(),
     };
-    let outs = run_cell_profiles(&data, &ref_cols, &query_cols, &loci, &cfg, &args.out)?;
+    let outs = run_cell_profiles(&data, &ref_cols, &query_cols, &loci, &cfg, out)?;
     info!(
         "done: {} ({} intervals × {} cells)",
         outs.backend, outs.n_rows, outs.n_cells
@@ -391,39 +411,136 @@ fn main() -> anyhow::Result<()> {
     }
 
     match &cli.command {
-        Commands::Infercnv(args) => run_infercnv(args),
+        Commands::Infercnv(a) => run_infercnv(&a.query, &a.out, a.bin_size, &a.opts),
         Commands::Clones(args) => run_clones(args),
+        Commands::Data(cmd) => run_data(cmd),
+        Commands::Describe { command } => {
+            println!("{}", describe(command)?);
+            Ok(())
+        }
     }
+}
+
+/// Subcommand `name`'s arguments as JSON: what a front end needs to show
+/// each flag, fill it in, and lay out the command line.
+fn describe(name: &str) -> anyhow::Result<String> {
+    use clap::{ArgAction, CommandFactory};
+    let mut cli = Cli::command();
+    cli.build();
+    let cmd = cli
+        .find_subcommand(name)
+        .filter(|c| !c.is_hide_set())
+        .ok_or_else(|| anyhow::anyhow!("mung has no `{name}` command"))?;
+    let text = |s: Option<&clap::builder::StyledStr>| s.map(ToString::to_string);
+    let args: Vec<serde_json::Value> = cmd
+        .get_arguments()
+        .map(|a| {
+            let action = match a.get_action() {
+                ArgAction::SetTrue => "set_true",
+                ArgAction::SetFalse => "set_false",
+                ArgAction::Set => "set",
+                ArgAction::Append => "append",
+                ArgAction::Count => "count",
+                ArgAction::Help | ArgAction::HelpShort | ArgAction::HelpLong => "help",
+                ArgAction::Version => "version",
+                _ => "other",
+            };
+            let num_args = a.get_num_args();
+            // What a value must parse as, so a front end can check it.
+            let t = a.get_value_parser().type_id();
+            let is = |ids: &[std::any::TypeId]| ids.iter().any(|x| t == *x);
+            use std::any::TypeId as T;
+            let value_type = if is(&[T::of::<usize>(), T::of::<u64>(), T::of::<u32>()]) {
+                "unsigned"
+            } else if is(&[T::of::<i64>(), T::of::<i32>()]) {
+                "integer"
+            } else if is(&[T::of::<f64>(), T::of::<f32>()]) {
+                "number"
+            } else {
+                "text"
+            };
+            serde_json::json!({
+                "id": a.get_id().as_str(),
+                "long": a.get_long(),
+                "short": a.get_short().map(String::from),
+                "positional": a.is_positional(),
+                "help": text(a.get_help()),
+                "long_help": text(a.get_long_help()),
+                "action": action,
+                "value_type": value_type,
+                "values": a
+                    .get_possible_values()
+                    .iter()
+                    .filter(|v| !v.is_hide_set())
+                    .map(|v| v.get_name().to_string())
+                    .collect::<Vec<_>>(),
+                "default": a
+                    .get_default_values()
+                    .iter()
+                    .map(|v| v.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>(),
+                "delimiter": a.get_value_delimiter().map(String::from),
+                "num_args_min": num_args.map(|r| r.min_values()),
+                "num_args_max": num_args.and_then(|r| {
+                    (r.max_values() != usize::MAX).then_some(r.max_values())
+                }),
+                "hidden": a.is_hide_set(),
+                "required": a.is_required_set(),
+                "global": a.is_global_set(),
+            })
+        })
+        .collect();
+    Ok(serde_json::json!({
+        "describe": 1,
+        "program": "mung",
+        "version": env!("CARGO_PKG_VERSION"),
+        "command": name,
+        "about": text(cmd.get_about()),
+        "args": args,
+    })
+    .to_string())
+}
+
+fn run_data(cmd: &DataCmd) -> anyhow::Result<()> {
+    let config = Config::load()?;
+    match cmd {
+        DataCmd::Where => {
+            println!("config: {}", config.source());
+            for a in &config.annotations {
+                let state = match a.cached() {
+                    Some(p) if p.is_file() => p.display().to_string(),
+                    _ => "not cached".into(),
+                };
+                let mark = if config.default.as_deref() == Some(&a.species) {
+                    " (default)"
+                } else {
+                    ""
+                };
+                println!("  {}{mark}: {}; {state}", a.species, a.label);
+            }
+        }
+        DataCmd::Fetch { species, force } => {
+            let picked: Vec<_> = if species.is_empty() {
+                config.annotations.iter().collect()
+            } else {
+                species
+                    .iter()
+                    .map(|s| config.pick(Some(s)))
+                    .collect::<anyhow::Result<_>>()?
+            };
+            for a in picked {
+                info!("{}: {}", a.species, a.ensure_cached(*force)?.display());
+            }
+        }
+    }
+    Ok(())
 }
 
 fn run_clones(args: &CloneArgs) -> anyhow::Result<()> {
     let backend_path = if let Some(from) = args.from.as_ref() {
         from.to_string()
     } else {
-        anyhow::ensure!(
-            !args.query.is_empty(),
-            "QUERY backends required unless --from"
-        );
-        let gff = args
-            .gff
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("--gff is required unless --from"))?;
-        let infer = InferCnvArgs {
-            query: args.query.clone(),
-            r#ref: args.r#ref.clone(),
-            gff: gff.clone(),
-            out: args.out.clone(),
-            window: args.window,
-            clip: args.clip,
-            scale: args.scale,
-            min_mean_expr: args.min_mean_expr,
-            bin_size: args.bin_size,
-            block_size: args.block_size,
-            no_center: args.no_center,
-            exclude_chr: args.exclude_chr.clone(),
-            preload: args.preload,
-        };
-        run_infercnv(&infer)?;
+        run_infercnv(&args.query, &args.out, args.bin_size, &args.infer)?;
         format!("{}.zarr.zip", args.out)
     };
 

@@ -4,7 +4,8 @@
 //! Copy number variation detection from single-cell expression data.
 //!
 //! Pipeline:
-//! 1. [`gene_loci`] — GFF gene loci for `data-beans` row names.
+//! 1. [`gene_loci`] — GFF gene loci for `data-beans` row names, from a
+//!    file or the annotation config ([`gene_annotation`]).
 //! 2. [`infercnv`] — scalable inferCNV-style log-ratio: reference subtraction
 //!    and chromosome-bounded window smoothing (`O(G)` per column).
 //! 3. [`cell_profile`] — streamed per-cell inferCNV profiles from backends
@@ -23,6 +24,7 @@
 pub mod cell_profile;
 pub mod clone_bayes;
 pub mod clone_call;
+pub mod gene_annotation;
 pub mod gene_loci;
 pub mod genome_order;
 pub mod hmm;

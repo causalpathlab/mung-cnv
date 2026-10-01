@@ -59,15 +59,24 @@ cargo install --path .
 ## Usage
 
 ```sh
-mung infercnv --gff gencode.v46.gtf.gz \
+mung infercnv \
   --ref Control1.zarr.zip Control2.zarr.zip \
-  --out aml001.cnv AML001.zarr.zip
+  --out sample1.cnv sample1.zarr.zip
 
-mung clones --from aml001.cnv.zarr.zip --out aml001
-# writes aml001.clones.parquet for senna / pinto --cnv-clones
+mung clones --from sample1.cnv.zarr.zip --out sample1
+# writes sample1.clones.parquet for senna / pinto --cnv-clones
 ```
 
+Without `--gff`, mung uses the gene annotation for `--species` (default:
+the config's `default`) named in `data/annotations.json`, downloaded once
+into the user cache (`MUNG_CACHE_DIR`). To use other annotations, put your
+own `annotations.json` in `~/.config/mung/` (`MUNG_CONFIG_DIR`). `mung data
+where` shows the config in use and what is cached; `mung data fetch` fills
+the cache ahead of time for machines that run offline (`MUNG_OFFLINE`).
+
 `mung --help` and `mung <subcommand> --help` document all flags.
+`mung describe <subcommand>` prints the same flags as JSON for front ends
+such as `senna run`, which start `mung` as a separate program.
 
 ## Library
 

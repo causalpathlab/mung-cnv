@@ -704,7 +704,7 @@ mod tests {
                 0.02 * (rng.random::<f32>() - 0.5),
                 0.5 + 0.02 * (rng.random::<f32>() - 0.5),
             ]);
-            names.push(format!("t{i}@AML").into_boxed_str());
+            names.push(format!("t{i}@D1").into_boxed_str());
             burden.push(0.20 + 0.01 * (rng.random::<f32>() - 0.5));
         }
         (DMatrix::from_vec(3, n, data), names, burden)
@@ -757,16 +757,16 @@ mod tests {
             },
         );
         let n_clone = rows.iter().filter(|r| r.stratum > 0).count();
-        let aml_cloned = rows
+        let d1_cloned = rows
             .iter()
-            .filter(|r| r.donor.as_ref() == "AML" && r.stratum > 0)
+            .filter(|r| r.donor.as_ref() == "D1" && r.stratum > 0)
             .count();
         let ctl_cloned = rows
             .iter()
             .filter(|r| r.donor.as_ref() == "Ctl" && r.stratum > 0)
             .count();
         assert!(n_clone >= 40, "expected a clone, got {n_clone} cells");
-        assert!(aml_cloned >= 40, "AML cells should form the clone");
+        assert!(d1_cloned >= 40, "D1 cells should form the clone");
         assert!(
             ctl_cloned < 15,
             "Control cells should stay in bucket 0, got {ctl_cloned}"

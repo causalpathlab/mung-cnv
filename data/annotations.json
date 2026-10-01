@@ -1,0 +1,17 @@
+{
+  "default": "human",
+  "annotations": {
+    "human": {
+      "source": "GENCODE",
+      "release": "50",
+      "assembly": "GRCh38",
+      "url": "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_50/gencode.v50.annotation.gtf.gz"
+    },
+    "mouse": {
+      "source": "GENCODE",
+      "release": "M39",
+      "assembly": "GRCm39",
+      "url": "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M39/gencode.vM39.annotation.gtf.gz"
+    }
+  }
+}
