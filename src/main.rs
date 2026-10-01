@@ -169,14 +169,23 @@ struct InferOpts {
     r#ref: Vec<Box<str>>,
 
     #[arg(
-        long,
-        help = "GFF/GTF with `gene` features (gene_id, gene_name); default: `--species`' annotation, downloaded once"
+        short = 'g',
+        long = "gff",
+        help = "Gene annotation file (GFF/GTF)",
+        long_help = "Path to gene annotation file in GFF/GTF format, with `gene`\n\
+                     features carrying gene_id and gene_name. Places each gene on\n\
+                     the genome. Optional: without it, the `--species` entry of\n\
+                     the annotation config is used, downloaded once into the cache\n\
+                     (`mung data where`). Ignored by `clones --from`."
     )]
     gff: Option<Box<str>>,
 
     #[arg(
         long,
-        help = "Species in the annotation config (`mung data where`) whose annotation to use without `--gff`; default: the config's `default`"
+        help = "Species whose annotation to use without --gff",
+        long_help = "Species in the annotation config (`mung data where`) whose\n\
+                     gene annotation to use when --gff is not given. Default: the\n\
+                     config's `default`."
     )]
     species: Option<Box<str>>,
 

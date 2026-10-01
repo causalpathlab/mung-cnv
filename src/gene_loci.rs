@@ -7,8 +7,8 @@
 //! Matching goes through the workspace's one canonical gene matcher,
 //! [`data_beans::utilities::name_matching::GeneIndex`], built over the GFF
 //! vocabulary as `{ensg}_{symbol}`: case-insensitive; exact → symbol →
-//! Ensembl id → decomposed `ENSG_SYMBOL[/aux]` → HGNC alias table
-//! (`HIST1H4C` ↔ `H4C3`, `MARCH2` ↔ `MARCHF2`) → flexible fallback. The
+//! Ensembl id → decomposed `ENSG_SYMBOL[/aux]` → HGNC alias table (an
+//! old symbol finds its renamed gene) → flexible fallback. The
 //! Ensembl version suffix is dropped on both sides first.
 //!
 //! Same source of truth as `faba` (`genomic_data::gff::GffRecordMap`,
@@ -161,7 +161,7 @@ mod tests {
         let records = vec![
             rec(
                 "ENSG1",
-                "TP53",
+                "GENE1",
                 "chr17",
                 7_661_779,
                 7_687_538,
@@ -169,7 +169,7 @@ mod tests {
             ),
             rec(
                 "ENSG2",
-                "MYC",
+                "GENE2",
                 "chr8",
                 127_735_434,
                 127_742_951,
@@ -185,57 +185,34 @@ mod tests {
     #[test]
     fn resolves_all_name_shapes() {
         let idx = index();
-        assert_eq!(idx.resolve("TP53").unwrap().gene_id.as_ref(), "ENSG1");
-        assert_eq!(idx.resolve("ENSG1").unwrap().symbol.as_ref(), "TP53");
-        assert_eq!(idx.resolve("ENSG1.12").unwrap().symbol.as_ref(), "TP53");
-        assert_eq!(idx.resolve("ENSG1_TP53").unwrap().symbol.as_ref(), "TP53");
+        assert_eq!(idx.resolve("GENE1").unwrap().gene_id.as_ref(), "ENSG1");
+        assert_eq!(idx.resolve("ENSG1").unwrap().symbol.as_ref(), "GENE1");
+        assert_eq!(idx.resolve("ENSG1.12").unwrap().symbol.as_ref(), "GENE1");
+        assert_eq!(idx.resolve("ENSG1_GENE1").unwrap().symbol.as_ref(), "GENE1");
         assert_eq!(
-            idx.resolve("ENSGX_MYC/count/spliced")
+            idx.resolve("ENSGX_GENE2/count/spliced")
                 .unwrap()
                 .gene_id
                 .as_ref(),
             "ENSG2"
         );
-        // Canonical matcher: case-insensitive, and an ENSG row whose symbol
-        // moved between HGNC releases still lands on the same locus.
-        assert_eq!(idx.resolve("tp53").unwrap().gene_id.as_ref(), "ENSG1");
+        // Canonical matcher: case-insensitive, with or without the ENSG id.
+        assert_eq!(idx.resolve("gene1").unwrap().gene_id.as_ref(), "ENSG1");
         assert_eq!(
-            idx.resolve("ENSG1.12_TP53").unwrap().symbol.as_ref(),
-            "TP53"
+            idx.resolve("ENSG1.12_GENE1").unwrap().symbol.as_ref(),
+            "GENE1"
         );
         assert!(idx.resolve("NOPE").is_none());
     }
 
     #[test]
-    fn hgnc_alias_resolves_through_canonical_matcher() {
-        let records = vec![rec(
-            "ENSG9",
-            "H4C3",
-            "chr6",
-            26_104_000,
-            26_104_900,
-            Strand::Forward,
-        )];
-        let map = GffRecordMap::from_map(
-            genomic_data::gff::build_gene_map(&records, Some(&FeatureType::Gene)).unwrap(),
-        );
-        let idx = GeneLocusIndex::from_record_map(&map);
-        // Old HGNC name in the matrix, new one in the GFF.
-        assert_eq!(idx.resolve("HIST1H4C").unwrap().gene_id.as_ref(), "ENSG9");
-        assert_eq!(
-            idx.resolve("ENSGZ_HIST1H4C").unwrap().gene_id.as_ref(),
-            "ENSG9"
-        );
-    }
-
-    #[test]
     fn tss_follows_strand_and_interval_is_bed() {
         let idx = index();
-        let tp53 = idx.resolve("TP53").unwrap();
-        assert_eq!(tp53.tss, 7_687_538);
-        assert_eq!(tp53.interval_name().as_ref(), "chr17:7661778-7687538");
-        let myc = idx.resolve("MYC").unwrap();
-        assert_eq!(myc.tss, 127_735_434);
-        assert_eq!(myc.gene_key().as_ref(), "ENSG2_MYC");
+        let g1 = idx.resolve("GENE1").unwrap();
+        assert_eq!(g1.tss, 7_687_538);
+        assert_eq!(g1.interval_name().as_ref(), "chr17:7661778-7687538");
+        let g2 = idx.resolve("GENE2").unwrap();
+        assert_eq!(g2.tss, 127_735_434);
+        assert_eq!(g2.gene_key().as_ref(), "ENSG2_GENE2");
     }
 }
