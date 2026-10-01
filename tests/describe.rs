@@ -2,11 +2,16 @@
 
 use std::process::Command;
 
-fn describe(name: &str) -> std::process::Output {
+fn mung(args: &[&str], envs: &[(&str, &std::path::Path)]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_mung"))
-        .args(["describe", name])
+        .args(args)
+        .envs(envs.iter().copied())
         .output()
         .unwrap()
+}
+
+fn describe(name: &str) -> std::process::Output {
+    mung(&["describe", name], &[])
 }
 
 #[test]
@@ -25,6 +30,8 @@ fn describes_the_clones_flags_as_json() {
     assert_eq!(arg("bin-size")["value_type"], "integer");
     assert_eq!(arg("clip")["value_type"], "number");
     assert_eq!(arg("gff")["value_type"], "text");
+    assert_eq!(arg("gff")["required"], false);
+    assert_eq!(arg("species")["value_type"], "text");
     assert_eq!(arg("no-center")["action"], "set_true");
     assert!(arg("engine")["values"]
         .as_array()
@@ -43,16 +50,29 @@ fn an_unknown_command_is_an_error() {
 }
 
 #[test]
-fn clones_wants_gff_and_query_unless_from() {
-    let run = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_mung"))
-            .arg("clones")
-            .args(args)
-            .output()
-            .unwrap()
-    };
-    let missing = run(&["--out", "x"]);
-    assert!(!missing.status.success());
-    let err = String::from_utf8_lossy(&missing.stderr);
-    assert!(err.contains("--gff") && err.contains("QUERY"), "{err}");
+fn clones_wants_query_unless_from() {
+    let out = mung(&["clones", "--out", "x"], &[]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("QUERY"), "{err}");
+}
+
+#[test]
+fn without_gff_offline_and_uncached_says_what_to_do() {
+    let tmp = std::env::temp_dir().join(format!("mung-offline-{}", std::process::id()));
+    let (cache, config) = (tmp.join("cache"), tmp.join("config"));
+    let out = mung(
+        &["infercnv", "--out", "x", "q.zarr.zip"],
+        &[
+            ("MUNG_OFFLINE", std::path::Path::new("1")),
+            ("MUNG_CACHE_DIR", &cache),
+            ("MUNG_CONFIG_DIR", &config),
+        ],
+    );
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("--gff") && err.contains("mung data fetch"),
+        "{err}"
+    );
 }
