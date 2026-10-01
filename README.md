@@ -67,6 +67,16 @@ mung clones --from sample1.cnv.zarr.zip --out sample1
 # writes sample1.clones.parquet for senna / pinto --cnv-clones
 ```
 
+Rows named as genomic intervals (`chr:start-end`) are placed by their own
+coordinates, so a binned read-depth matrix needs no annotation:
+
+```sh
+faba depth -r 1000 --output depth sample1.bam
+mung infercnv --window 5 --out sample1.cnv depth/sample1_depth.zarr.zip
+```
+
+`--window` counts rows, so with 1 Mb bins `--window 5` smooths over 5 Mb.
+
 Without `--gff`, mung uses the gene annotation for `--species` (default:
 the config's `default`) named in `data/annotations.json`, downloaded once
 into the user cache (`MUNG_CACHE_DIR`). To use other annotations, put your

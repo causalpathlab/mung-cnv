@@ -8,7 +8,7 @@ use cnv::cell_profile::{run_cell_profiles, CellProfileConfig};
 use cnv::clone_bayes::{cells_table_beside, DEFAULT_MIN_PURITY};
 use cnv::clone_call::{call_clones_with_burden, write_clone_table, CloneCallConfig, CloneEngine};
 use cnv::gene_annotation::{self, Config};
-use cnv::gene_loci::GeneLocusIndex;
+use cnv::gene_loci::{resolve_rows, GeneLocusIndex};
 use data_beans::aux::data_loading::{read_data_on_shared_rows, ReadSharedRowsArgs};
 use data_beans::convert::try_open_or_convert;
 use data_beans::sparse_io_vector::SparseIoVec;
@@ -174,9 +174,11 @@ struct InferOpts {
         help = "Gene annotation file (GFF/GTF)",
         long_help = "Path to gene annotation file in GFF/GTF format, with `gene`\n\
                      features carrying gene_id and gene_name. Places each gene on\n\
-                     the genome. Optional: without it, the `--species` entry of\n\
-                     the annotation config is used, downloaded once into the cache\n\
-                     (`mung data where`). Ignored by `clones --from`."
+                     the genome. Not needed for rows named as genomic intervals\n\
+                     (`chr:start-end`, e.g. `faba depth` bins). Optional: without\n\
+                     it, the `--species` entry of the annotation config is used,\n\
+                     downloaded once into the cache (`mung data where`). Ignored\n\
+                     by `clones --from`."
     )]
     gff: Option<Box<str>>,
 
@@ -341,8 +343,6 @@ fn run_infercnv(
     bin_size: i64,
     args: &InferOpts,
 ) -> anyhow::Result<()> {
-    // The annotation first, so a missing one fails before any data is read.
-    let gff = gene_annotation::resolve(args.gff.as_deref(), args.species.as_deref())?;
     let has_ref = !args.r#ref.is_empty();
     if !has_ref {
         warn!("no --ref given: using the query cohort mean as baseline; shared CNVs will be invisible");
@@ -378,9 +378,12 @@ fn run_infercnv(
     );
 
     let row_names = data.row_names()?;
-    let loci = GeneLocusIndex::from_gff(&gff)
-        .with_context(|| format!("reading {gff}"))?
-        .resolve_all(&row_names);
+    // Interval rows (faba read depth) are placed by name; the annotation is
+    // found, and if need be downloaded, only for gene rows.
+    let loci = resolve_rows(&row_names, || {
+        let gff = gene_annotation::resolve(args.gff.as_deref(), args.species.as_deref())?;
+        GeneLocusIndex::from_gff(&gff).with_context(|| format!("reading {gff}"))
+    })?;
 
     let cfg = CellProfileConfig {
         window: args.window,

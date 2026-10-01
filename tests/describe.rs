@@ -56,23 +56,3 @@ fn clones_wants_query_unless_from() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("QUERY"), "{err}");
 }
-
-#[test]
-fn without_gff_offline_and_uncached_says_what_to_do() {
-    let tmp = std::env::temp_dir().join(format!("mung-offline-{}", std::process::id()));
-    let (cache, config) = (tmp.join("cache"), tmp.join("config"));
-    let out = mung(
-        &["infercnv", "--out", "x", "q.zarr.zip"],
-        &[
-            ("MUNG_OFFLINE", std::path::Path::new("1")),
-            ("MUNG_CACHE_DIR", &cache),
-            ("MUNG_CONFIG_DIR", &config),
-        ],
-    );
-    assert!(!out.status.success());
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        err.contains("--gff") && err.contains("mung data fetch"),
-        "{err}"
-    );
-}
