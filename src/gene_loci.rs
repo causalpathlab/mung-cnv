@@ -18,7 +18,7 @@
 //! `gene` features stretched over all their records).
 
 use data_beans::utilities::name_matching::GeneIndex;
-use genomic_data::coordinates::{parse_peak_coordinates, PeakCoord};
+use genomic_data::coordinates::{parse_interval, PeakCoord};
 use genomic_data::gff::{GeneId, GeneSymbol, GffRecordMap};
 use rayon::prelude::*;
 
@@ -75,11 +75,12 @@ fn strip_modality(row_name: &str) -> &str {
 /// faba `/modality/...` suffix); `None` when any row is not, and the axis is
 /// genes. A row keeps its own name and its chromosome as written.
 pub fn interval_loci(row_names: &[Box<str>]) -> Option<Vec<GeneLocus>> {
-    let cores: Vec<Box<str>> = row_names.iter().map(|n| strip_modality(n).into()).collect();
-    parse_peak_coordinates(&cores)
-        .into_iter()
-        .zip(&cores)
-        .map(|(r, name)| Some(GeneLocus::from_coord(name, r?)))
+    row_names
+        .iter()
+        .map(|n| {
+            let name = strip_modality(n);
+            Some(GeneLocus::from_coord(name, parse_interval(name)?))
+        })
         .collect()
 }
 
@@ -283,7 +284,13 @@ mod tests {
 
     #[test]
     fn one_gene_row_makes_a_gene_axis() {
-        for other in ["GENE1", "ENSG1_GENE1", "chr2:2000-1000", "chr2:15"] {
+        for other in [
+            "GENE1",
+            "ENSG1_GENE1",
+            "GENE-1",
+            "chr2:2000-1000",
+            "chr2:15",
+        ] {
             assert!(
                 interval_loci(&names(&["chr1:0-10", other])).is_none(),
                 "{other}"
