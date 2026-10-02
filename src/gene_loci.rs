@@ -18,7 +18,7 @@
 //! `gene` features stretched over all their records).
 
 use data_beans::utilities::name_matching::GeneIndex;
-use genomic_data::coordinates::{parse_interval, PeakCoord};
+use genomic_data::coordinates::{import_interval, PeakCoord};
 use genomic_data::gff::{GeneId, GeneSymbol, GffRecordMap};
 use rayon::prelude::*;
 
@@ -36,9 +36,8 @@ pub struct GeneLocus {
 }
 
 impl GeneLocus {
-    /// BED-style interval name `chr:start0-end` (0-based half-open) — the
-    /// `chr:start-end` grammar `genomic_data::coordinates::parse_region`
-    /// reads back.
+    /// BED-style interval name `chr:start0-end` (0-based half-open), the
+    /// locus form `genomic_data::coordinates::parse_interval` reads back.
     pub fn interval_name(&self) -> Box<str> {
         format!("{}:{}-{}", self.chromosome, self.start - 1, self.stop).into()
     }
@@ -70,28 +69,40 @@ fn strip_modality(row_name: &str) -> &str {
     row_name.split('/').next().unwrap_or(row_name).trim()
 }
 
-/// Each row's locus when every row is named as a genomic interval
-/// (`chr:start-end` or `chr_start_end`, 0-based half-open, with an optional
-/// faba `/modality/...` suffix); `None` when any row is not, and the axis is
-/// genes. A row keeps its own name and its chromosome as written.
+/// Each row's locus when every row is named as a genomic interval, 0-based
+/// half-open, with an optional faba `/modality/...` suffix; `None` when any
+/// row is not, and the axis is genes. Row names come from outside, so they
+/// are read once with the lenient `import_interval` (`chr:start-end`, as
+/// `faba depth` writes, or an older `chr_start_end`); requiring every row to
+/// be an interval keeps gene ids off this path. A row keeps its own name and
+/// its chromosome as written.
 pub fn interval_loci(row_names: &[Box<str>]) -> Option<Vec<GeneLocus>> {
     row_names
         .iter()
         .map(|n| {
             let name = strip_modality(n);
-            Some(GeneLocus::from_coord(name, parse_interval(name)?))
+            Some(GeneLocus::from_coord(name, import_interval(name)?))
         })
         .collect()
 }
 
-/// An error naming two distinct bins that overlap: the files were binned on
-/// different grids, and their rows cannot be aligned one to one.
+/// An error naming two bins that cannot be aligned one to one across files
+/// (rows are aligned by exact name): bins that overlap, as when files were
+/// binned on different grids, or one bin spelled two ways.
 pub fn check_one_grid(loci: &[GeneLocus]) -> anyhow::Result<()> {
     let mut by_pos: Vec<&GeneLocus> = loci.iter().collect();
     by_pos.sort_by(|a, b| (&a.chromosome, a.start, a.stop).cmp(&(&b.chromosome, b.start, b.stop)));
-    by_pos.dedup_by(|a, b| a.chromosome == b.chromosome && a.start == b.start && a.stop == b.stop);
+    by_pos.dedup_by(|a, b| a.gene_id == b.gene_id);
     for w in by_pos.windows(2) {
-        if w[0].chromosome == w[1].chromosome && w[1].start <= w[0].stop {
+        let same_chr = w[0].chromosome == w[1].chromosome;
+        if same_chr && (w[0].start, w[0].stop) == (w[1].start, w[1].stop) {
+            anyhow::bail!(
+                "bin {} is also named {}: name every file's bins the same way",
+                w[0].gene_id,
+                w[1].gene_id
+            );
+        }
+        if same_chr && w[1].start <= w[0].stop {
             anyhow::bail!(
                 "bins {} and {} overlap: the inputs were binned on different grids; \
                  bin every file with the same resolution",
@@ -308,6 +319,9 @@ mod tests {
     fn bins_on_different_grids_are_refused() {
         let same = interval_loci(&names(&["chr1:0-10", "chr1:10-20", "chr1:0-10"])).unwrap();
         assert!(check_one_grid(&same).is_ok());
+        let respelled = interval_loci(&names(&["chr1:0-10", "chr1_0_10"])).unwrap();
+        let err = check_one_grid(&respelled).unwrap_err().to_string();
+        assert!(err.contains("also named"), "{err}");
         let shifted = interval_loci(&names(&["chr1:0-10", "chr1:5-15"])).unwrap();
         let err = check_one_grid(&shifted).unwrap_err().to_string();
         assert!(

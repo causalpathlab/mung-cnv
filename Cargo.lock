@@ -1026,9 +1026,9 @@ dependencies = [
 
 [[package]]
 name = "data-beans"
-version = "0.6.24"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "674699a07e014e2ec723e3e0d991808ff01c1ce8e2452047dfcc295b1a7cdb50"
+checksum = "da9128476b569d2b63c77ce33735fdecb43ecd4188242703079f094454893b6e"
 dependencies = [
  "anyhow",
  "approx",
@@ -2440,9 +2440,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "legume-genomic-types"
-version = "0.4.6"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "afa0a202928d3e34a16811aa0ec94c101608f9d7c5134f2980999d58a90b7575"
+checksum = "a1abfb0da9e371a7c9cb679d5d062f6784bf3115824c76613a95a0a12a319df0"
 dependencies = [
  "anyhow",
  "dashmap",
@@ -2455,9 +2455,9 @@ dependencies = [
 
 [[package]]
 name = "legume-numeric"
-version = "0.8.15"
+version = "0.8.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2f0fa93aeefb8f571ba084d93058c1bf1c0babbc3e8c41808378e8fdc6c9fe2"
+checksum = "88aca87c0b52c7184bd85eae951ff6e1f4b18c2f6191decc24b8aa40d438a0e3"
 dependencies = [
  "anyhow",
  "approx",
@@ -2804,7 +2804,7 @@ checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
 name = "mung-cnv"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "anyhow",
  "approx",

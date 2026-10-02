@@ -341,7 +341,7 @@ struct CloneArgs {
 /// How rows are placed on the genome.
 enum RowAxis {
     /// Gene rows, looked up in the annotation.
-    Genes(GeneLocusIndex),
+    Genes(Box<GeneLocusIndex>),
     /// Genomic-interval rows, placed by their own names.
     Intervals,
 }
@@ -387,9 +387,8 @@ fn run_infercnv(
         }
         None => {
             let gff = gene_annotation::resolve(args.gff.as_deref(), args.species.as_deref())?;
-            RowAxis::Genes(
-                GeneLocusIndex::from_gff(&gff).with_context(|| format!("reading {gff}"))?,
-            )
+            let index = GeneLocusIndex::from_gff(&gff).with_context(|| format!("reading {gff}"))?;
+            RowAxis::Genes(Box::new(index))
         }
     };
 
