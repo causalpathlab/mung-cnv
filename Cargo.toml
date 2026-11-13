@@ -1,6 +1,6 @@
 [package]
 name = "mung-cnv"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 rust-version = "1.91"
 license = "MIT"
@@ -31,7 +31,7 @@ metal = [
 hdf5 = ["data-beans/hdf5"]
 
 [dependencies]
-data-beans = { version = "0.8", default-features = false, features = ["aux"] }
+data-beans = { version = "0.11", default-features = false, features = ["aux"] }
 legume-genomic-types = "0.6"
 legume-numeric = { version = "0.9", default-features = false, features = ["matrix", "param"] }
 
